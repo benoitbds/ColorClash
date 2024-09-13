@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Color Clash</title>
+    <title>Finger Twister Challenge</title>
     <style>
         body {
             margin: 0;
@@ -10,7 +10,7 @@
             font-family: Arial, sans-serif;
             background-color: #222;
             color: #fff;
-            text-align: center;
+            touch-action: none;
         }
         #gameArea {
             position: relative;
@@ -20,26 +20,16 @@
         .circle {
             position: absolute;
             border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            cursor: pointer;
+            width: 100px;
+            height: 100px;
+            background-color: gray;
         }
-        #scoreboard {
+        #instruction {
             position: absolute;
             top: 10px;
             left: 50%;
             transform: translateX(-50%);
-            display: flex;
-            gap: 20px;
-        }
-        .playerScore {
-            font-size: 18px;
-        }
-        #timer {
-            position: absolute;
-            top: 10px;
-            right: 20px;
-            font-size: 18px;
+            font-size: 24px;
         }
         #startScreen, #endScreen {
             position: absolute;
@@ -47,12 +37,13 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0, 0, 0, 0.8);
+            background-color: rgba(0, 0, 0, 0.9);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             color: #fff;
+            z-index: 10;
         }
         #startScreen input {
             width: 50px;
@@ -68,39 +59,47 @@
         #endScreen h2 {
             margin-bottom: 20px;
         }
+        #timer {
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            font-size: 24px;
+        }
     </style>
 </head>
 <body>
     <div id="gameArea">
-        <div id="scoreboard"></div>
+        <div id="instruction"></div>
         <div id="timer">Temps : 5:00</div>
         <div id="startScreen">
-            <h1>Color Clash</h1>
+            <h1>Finger Twister Challenge</h1>
             <p>Nombre de joueurs (2-4) :</p>
             <input type="number" id="numPlayers" min="2" max="4" value="2">
             <button id="startButton">Démarrer le jeu</button>
         </div>
         <div id="endScreen" style="display: none;">
             <h2>Jeu Terminé !</h2>
-            <div id="finalScores"></div>
+            <div id="winner"></div>
             <button id="restartButton">Rejouer</button>
         </div>
     </div>
     <script>
         const gameArea = document.getElementById('gameArea');
-        const scoreboard = document.getElementById('scoreboard');
+        const instruction = document.getElementById('instruction');
         const timerDisplay = document.getElementById('timer');
         const startScreen = document.getElementById('startScreen');
         const endScreen = document.getElementById('endScreen');
         const numPlayersInput = document.getElementById('numPlayers');
         const startButton = document.getElementById('startButton');
         const restartButton = document.getElementById('restartButton');
-        const colors = ['red', 'blue', 'green', 'yellow'];
+        const colors = ['red', 'blue', 'green', 'yellow', 'purple', 'orange'];
         let players = [];
-        let circles = [];
+        let currentPlayerIndex = 0;
         let gameTime = 300; // 5 minutes en secondes
         let gameInterval;
-        let circleInterval;
+        let circles = [];
+        let touches = {};
+        let gameOver = false;
 
         startButton.addEventListener('click', startGame);
         restartButton.addEventListener('click', () => location.reload());
@@ -113,9 +112,8 @@
             }
             startScreen.style.display = 'none';
             initPlayers(numPlayers);
-            updateScoreboard();
+            nextTurn();
             gameInterval = setInterval(updateTimer, 1000);
-            circleInterval = setInterval(spawnCircle, 800);
         }
 
         function initPlayers(num) {
@@ -123,21 +121,10 @@
                 players.push({
                     id: i,
                     color: colors[i],
-                    score: 0
+                    fingers: 0,
+                    eliminated: false
                 });
             }
-        }
-
-        function updateScoreboard() {
-            scoreboard.innerHTML = '';
-            players.forEach(player => {
-                const playerScore = document.createElement('div');
-                playerScore.className = 'playerScore';
-                playerScore.style.color = player.color;
-                playerScore.id = 'playerScore' + player.id;
-                playerScore.textContent = `${player.color.toUpperCase()}: ${player.score}`;
-                scoreboard.appendChild(playerScore);
-            });
         }
 
         function updateTimer() {
@@ -150,67 +137,104 @@
             }
         }
 
-        function spawnCircle() {
-            const circle = document.createElement('div');
-            circle.className = 'circle';
-            const colorIndex = Math.floor(Math.random() * players.length);
-            circle.style.backgroundColor = players[colorIndex].color;
-            circle.dataset.color = players[colorIndex].color;
-            circle.style.top = Math.random() * (window.innerHeight - 60) + 'px';
-            circle.style.left = Math.random() * (window.innerWidth - 60) + 'px';
-            circle.addEventListener('click', handleCircleClick);
+        function nextTurn() {
+            if (gameOver) return;
+            if (players.filter(p => !p.eliminated).length === 1) {
+                endGame();
+                return;
+            }
+            const player = players[currentPlayerIndex];
+            if (player.eliminated) {
+                currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+                nextTurn();
+                return;
+            }
+            const circle = createCircle();
             gameArea.appendChild(circle);
             circles.push(circle);
-            setTimeout(() => {
-                if (circle.parentElement) {
-                    gameArea.removeChild(circle);
+            instruction.textContent = `Joueur ${player.id + 1} (${player.color.toUpperCase()}), placez un doigt sur le cercle ${circle.dataset.color.toUpperCase()} !`;
+            circle.addEventListener('touchstart', function touchHandler(e) {
+                if (e.touches.length === 1) {
+                    const touchId = e.changedTouches[0].identifier;
+                    touches[touchId] = {
+                        playerId: player.id,
+                        circle: circle
+                    };
+                    player.fingers++;
+                    circle.style.backgroundColor = circle.dataset.color;
+                    circle.removeEventListener('touchstart', touchHandler);
+                    currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+                    nextTurn();
+                } else {
+                    eliminatePlayer(player);
                 }
+            });
+        }
+
+        function createCircle() {
+            const circle = document.createElement('div');
+            circle.className = 'circle';
+            const colorIndex = Math.floor(Math.random() * colors.length);
+            circle.dataset.color = colors[colorIndex];
+            circle.style.border = `5px solid ${colors[colorIndex]}`;
+            circle.style.top = Math.random() * (window.innerHeight - 100) + 'px';
+            circle.style.left = Math.random() * (window.innerWidth - 100) + 'px';
+            return circle;
+        }
+
+        function eliminatePlayer(player) {
+            player.eliminated = true;
+            instruction.textContent = `Joueur ${player.id + 1} éliminé !`;
+            setTimeout(() => {
+                instruction.textContent = '';
+                currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+                nextTurn();
             }, 2000);
         }
 
-        function handleCircleClick(e) {
-            const clickedColor = e.target.dataset.color;
-            const player = players.find(p => p.color === clickedColor);
-            if (player) {
-                player.score++;
-                updatePlayerScore(player);
-                e.target.remove();
-            }
-        }
-
-        function updatePlayerScore(player) {
-            const playerScore = document.getElementById('playerScore' + player.id);
-            playerScore.textContent = `${player.color.toUpperCase()}: ${player.score}`;
-        }
-
         function endGame() {
+            gameOver = true;
             clearInterval(gameInterval);
-            clearInterval(circleInterval);
-            circles.forEach(circle => {
-                if (circle.parentElement) {
-                    gameArea.removeChild(circle);
+            instruction.textContent = '';
+            const remainingPlayers = players.filter(p => !p.eliminated);
+            let winnerText = '';
+            if (remainingPlayers.length === 1) {
+                winnerText = `Le gagnant est le Joueur ${remainingPlayers[0].id + 1} (${remainingPlayers[0].color.toUpperCase()}) !`;
+            } else {
+                const maxFingers = Math.max(...players.map(p => p.fingers));
+                const winners = players.filter(p => p.fingers === maxFingers);
+                if (winners.length === 1) {
+                    winnerText = `Le gagnant est le Joueur ${winners[0].id + 1} (${winners[0].color.toUpperCase()}) !`;
+                } else {
+                    winnerText = 'Égalité entre : ';
+                    winners.forEach(w => {
+                        winnerText += `Joueur ${w.id + 1} (${w.color.toUpperCase()}), `;
+                    });
+                    winnerText = winnerText.slice(0, -2);
                 }
-            });
-            showEndScreen();
+            }
+            endScreen.style.display = 'flex';
+            document.getElementById('winner').textContent = winnerText;
         }
 
-        function showEndScreen() {
-            endScreen.style.display = 'flex';
-            const finalScores = document.getElementById('finalScores');
-            finalScores.innerHTML = '';
-            players.sort((a, b) => b.score - a.score);
-            players.forEach(player => {
-                const scoreDiv = document.createElement('div');
-                scoreDiv.textContent = `${player.color.toUpperCase()} : ${player.score}`;
-                scoreDiv.style.color = player.color;
-                finalScores.appendChild(scoreDiv);
-            });
-            const winner = players[0];
-            const winnerDiv = document.createElement('h3');
-            winnerDiv.textContent = `Gagnant : ${winner.color.toUpperCase()} !`;
-            winnerDiv.style.color = winner.color;
-            finalScores.insertBefore(winnerDiv, finalScores.firstChild);
-        }
+        gameArea.addEventListener('touchend', (e) => {
+            for (let touch of e.changedTouches) {
+                const touchInfo = touches[touch.identifier];
+                if (touchInfo) {
+                    const player = players[touchInfo.playerId];
+                    player.fingers--;
+                    if (!gameOver && player.fingers < 0) {
+                        eliminatePlayer(player);
+                    }
+                    delete touches[touch.identifier];
+                }
+            }
+        });
+
+        // Empêcher le défilement par défaut lors du toucher
+        document.body.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+        }, { passive: false });
     </script>
 </body>
 </html>
